@@ -113,7 +113,9 @@ was copied in beside the starter, and the overlaps between the two:
       for the one sentence. Undecided.
 - [ ] **Specs 001–007 await approval.** Every `[NEEDS CLARIFICATION]` marker
       was answered by the user on 2026-10-09 and none remains; the specs are
-      still `draft` until signed off. None has a `plan.md`.
+      still `draft` until signed off. 001 has a `plan.md` and a `tasks.md`,
+      002 a `plan.md`; both were written on the user's instruction while the
+      index still says `draft`. 003–007 have neither.
 - [ ] **The inherited files no longer match the specs.** Answers on 2026-10-09
       moved boarHQ away from CDM's design: public instead of private-network
       only (001), self-registration with administrator approval, a one-week
@@ -128,6 +130,24 @@ was copied in beside the starter, and the overlaps between the two:
       Until then only the ingress sidecar and the proxy are brought up.
       `specs/001-public-access/plan.md` § Go-live rule. Closed by validating
       003 and 004.
+- [ ] **Where the pipeline stands (end of 2026-10-09).** Nothing is
+      implemented. Next for 001: `/sdd-implement` task 1 (the check script).
+      Before task 2 runs, decide whether the stale "authenticate directly"
+      sentence in `.env.example` is corrected there or only loses the inherited
+      name (`specs/001-public-access/tasks.md`, task 2). Next for 002: settle
+      the three conflicts at the end of its `plan.md` — which test software,
+      FR4 against the session-checking service, the routes directory — then
+      `/sdd-tasks`.
+- [ ] **The `sdd-*` skills here are older than the pack's.** The pack
+      (github.com/MuckFoe/SpecDrivenDev) now prescribes the `tasks.md` format
+      the viewer counts, and has `/sdd-implement` tick the checklist. The
+      copies under `.claude/skills/` were not synced; `/sdd-tasks` run here
+      will not know that format. 001's `tasks.md` already follows it.
+- [ ] **The spec viewer has no spec.** `specs/index.html` and `specs/serve.py`
+      were added as tooling with a one-sentence requirement in the commit
+      (GIT1). Documented in `specs/README.md` § Viewer. Not checked at phone
+      width or in dark mode for the Progress view; its unsaved-changes prompts
+      are untested.
 - [ ] **Future features named but not specified:** backups stored off the
       machine (005), operator notification over WhatsApp or Signal (007).
 - [ ] **Spec terms are not in `docs/concepts.md`.** The specs use *member*,
