@@ -122,6 +122,12 @@ was copied in beside the starter, and the overlaps between the two:
       named `cdm`, and `docs/infrastructure.md` and `docs/compose.md` still say
       "never public" and "no known exposures". `specs/README.md` lists the gap
       per spec.
+- [ ] **Go-live rule for public access.** Decided 2026-10-09 (user): the
+      identity provider is not started on a Funnel-enabled node until
+      `003-authentication-gate` and `004-delegated-identity` are validated.
+      Until then only the ingress sidecar and the proxy are brought up.
+      `specs/001-public-access/plan.md` § Go-live rule. Closed by validating
+      003 and 004.
 - [ ] **Future features named but not specified:** backups stored off the
       machine (005), operator notification over WhatsApp or Signal (007).
 - [ ] **Spec terms are not in `docs/concepts.md`.** The specs use *member*,

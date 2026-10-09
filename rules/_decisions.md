@@ -87,3 +87,9 @@ rule and are the most expensive things to reverse.
    `/sdd-constitution` is not run, because it would write a second set of
    principles beside the first. `memory/constitution.md` exists only as a
    pointer so the `sdd-*` skills find something at the path they read.
+8. **Checks are written in real test software; 001's shell script is the one
+   exception.** (user, 2026-10-09) `001-public-access` verifies its
+   configuration with a single shell script, `deploy/check/001-public-access.sh`. That script is not a pattern
+   (ARC1): every later spec uses an actual test tool wherever one can express
+   the check, and falls back to something else only where none can. Which tool
+   is not chosen yet — the first plan that needs one proposes it.

@@ -31,6 +31,15 @@ This reverses the inherited CDM infrastructure, which was private-network-only
   interface of the host machine.
 - **FR4** — THE SYSTEM SHALL admit inbound traffic through the one published
   entry point only.
+- **FR5** — THE SYSTEM SHALL carry the name `boarhq` wherever it or one of its
+  parts is named, and SHALL NOT keep the inherited name `cdm` for anything it
+  contains. One name for the system, not the hostname under one name and the
+  rest under another (user, 2026-10-09; STY1).
+- **FR6** — THE REPOSITORY SHALL NOT mention the project the infrastructure was
+  inherited from: not its name, not its history, not the requirement and
+  decision identifiers it cited, not the description of its application
+  (user, 2026-10-09). The one exception is this spec's own folder, which has
+  to name what it removes.
 
 ## Non-functional requirements
 
@@ -59,6 +68,12 @@ This reverses the inherited CDM infrastructure, which was private-network-only
   then no service publishes a port on the host.
 - **FR4** — Given a device on the internet, when it requests the host machine's
   own address on any port, then no service of the stack responds.
+- **FR5, FR6** — Given the repository's files, when they are searched for `cdm`
+  and for "Car Decision Model" without regard to case, then the only matches
+  are inside `specs/001-public-access/`.
+- **FR6** — Given the deployment files and the documents, when they are read,
+  then no comment or sentence cites a requirement or decision identifier of the
+  inherited project, and no section describes its application.
 
 ## Open questions
 
@@ -69,3 +84,6 @@ None. Resolved 2026-10-09:
   client.
 - The hostname is the name `boarhq` under the private network provider's
   domain. A custom domain is not part of this spec.
+- Everything is renamed to `boarhq`, not the hostname alone (FR5). Raised by
+  the plan as a conflict between STY1 and CON3; the user chose the rename.
+- Every mention of the inherited project goes too, its history included (FR6).
