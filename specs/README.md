@@ -7,11 +7,57 @@ beside it as the feature moves through the pipeline in `docs/sdd.md`.
 Specs are where requirements live. `REQUIREMENTS.md` was retired on 2026-10-09;
 a commit names the spec folder its change serves (GIT1).
 
+## Viewer
+
+`specs/index.html` shows everything here in one place: this index, each spec's
+artifacts, requirements paired with their acceptance criteria, task progress.
+It holds no copy; it reads the markdown each time it loads. From the root of
+the repository:
+
+```
+python specs/serve.py
+```
+
+then open <http://127.0.0.1:8777/>. A different port goes after the file name.
+
+**Progress.** The *Progress* view (`#progress`) lists every spec with every
+task, above three charts: tasks done and open per spec, how many specs have
+each artifact, and tasks per wave. One row of filters — text, status, artifact,
+open or done, only `[P]` — narrows the charts and the list together; clicking a
+bar in the artifact chart sets that filter. All of it is counted from the
+markdown on each load. A task's number, wave, `[P]` flag and requirement ids
+are read from `tasks.md`: the checklist line, a table with *Wave* and *Tasks*
+columns, and the `**Spec:**` line under the heading that starts with the task's
+number.
+
+**Editing.** Every file the viewer shows has an **Edit** button: this index,
+and each spec's `spec.md`, `plan.md`, `tasks.md` and `notes.md`. It opens the
+raw markdown; **Save** (or Ctrl+S) writes the whole file back. In a `tasks.md`
+the checkboxes can be ticked directly. What to know before relying on it:
+
+- A save writes straight to the working tree. Nothing is committed; `git diff`
+  shows what changed, and git is the undo.
+- If the file changed on disk after the page read it — an agent or an editor
+  got there first — the save is refused and nothing is written. Reload, then
+  apply the change again.
+- It edits files that exist. It does not create, rename or delete one; the
+  `/sdd-*` skills create the artifacts.
+- It does not know the pipeline. Changing a spec does not mark its plan or
+  tasks stale, and changing a status here is the human moving it.
+- Task checkboxes are list items — `- [ ] **1** — …` — not headings.
+
+`specs/serve.py` is what saves: Python standard library, bound to `127.0.0.1`,
+and it accepts writes only to those markdown files and only from this page.
+Under any plain static server (`python -m http.server`, run inside `specs/`)
+the page still works, read-only, and says so in its header.
+
+The page loads its markdown renderer from cdnjs, so it needs network access.
+
 ## Index
 
 | # | Spec | What it requires | Status | Open questions |
 |---|---|---|---|---|
-| 001 | [public-access](001-public-access/spec.md) | Reachable from the public internet at one hostname, over HTTPS; nothing published on the host | draft | 0 |
+| 001 | [public-access](001-public-access/spec.md) | Reachable from the public internet at one hostname, over HTTPS; nothing published on the host; everything named `boarhq`, no trace of the inherited project | draft | 0 |
 | 002 | [single-hostname-routing](002-single-hostname-routing/spec.md) | Every service under one hostname by path; adding one disturbs none | draft | 0 |
 | 003 | [authentication-gate](003-authentication-gate/spec.md) | Every request authenticated at the entry point; the API re-checks a signed proof | draft | 0 |
 | 004 | [delegated-identity](004-delegated-identity/spec.md) | The application never handles a credential; a dedicated identity provider does; self-registration with administrator approval; configured from a file in the repo | draft | 0 |
