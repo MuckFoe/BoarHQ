@@ -1,0 +1,120 @@
+# CDM ingress routing and authentication gate.
+#
+# Caddy shares ts-cdm's network namespace, so Tailscale Serve reaches it at
+# 127.0.0.1:80. TLS is already terminated by Serve — Caddy speaks plain HTTP
+# here and never issues a certificate.
+#
+# Auth model (D32): Caddy gates every request through oauth2-proxy, and
+# oauth2-proxy hands back a Bearer token that `api` verifies for itself. Two
+# independent checks. A request that somehow reaches api:8080 without passing
+# through here is still rejected, because it carries no valid signature.
+
+{
+	admin off
+	auto_https off
+
+	# CRITICAL. Serve sits in front and sets X-Forwarded-Proto: https.
+	# Without this, Caddy overwrites that header with "http" (its own
+	# connection), Keycloak builds http:// URLs from it, and login enters a
+	# redirect loop. Trusting the loopback peer makes Caddy preserve what
+	# Serve sent instead.
+	servers {
+		trusted_proxies static 127.0.0.1/32 ::1
+	}
+}
+
+# ── shared preamble ─────────────────────────────────────────────────────────
+# Delete any identity headers the CLIENT supplied before asking oauth2-proxy.
+# Without this a request could simply claim `X-Auth-Request-User: someone` and
+# be believed. copy_headers below then re-adds them from the auth response,
+# which is the only trustworthy source.
+(strip-identity) {
+	request_header -X-Auth-Request-User
+	request_header -X-Auth-Request-Email
+	request_header -X-Auth-Request-Groups
+	request_header -X-Auth-Request-Preferred-Username
+	request_header -Authorization
+}
+
+# Browser routes: no session means "go and get one".
+(sso) {
+	import strip-identity
+
+	forward_auth authproxy:4180 {
+		uri /oauth2/auth
+		copy_headers Authorization X-Auth-Request-User X-Auth-Request-Email X-Auth-Request-Groups X-Auth-Request-Preferred-Username
+
+		@unauthorized status 401
+		handle_response @unauthorized {
+			redir * /oauth2/start?rd={scheme}://{host}{uri}
+		}
+	}
+}
+
+# API routes: identical checks, but the 401 propagates untouched.
+# An XHR must receive 401 and never an HTML login page — a redirect here
+# either lands JSON parsing on a Keycloak form or is blocked outright.
+(sso-api) {
+	import strip-identity
+
+	forward_auth authproxy:4180 {
+		uri /oauth2/auth
+		copy_headers Authorization X-Auth-Request-User X-Auth-Request-Email X-Auth-Request-Groups X-Auth-Request-Preferred-Username
+	}
+}
+
+:80 {
+	log {
+		output stdout
+		format console
+	}
+	encode zstd gzip
+
+	# ── ungated ─────────────────────────────────────────────────────────────
+	# Caddy orders `handle` blocks by matcher specificity, so /api/healthz is
+	# evaluated before /api/*. Keep it that way if you reorder anything.
+
+	# Keycloak. Must never be gated — it *is* the authenticator, and putting it
+	# behind itself is an infinite loop.
+	handle /auth/* {
+		reverse_proxy auth:8080
+	}
+
+	# oauth2-proxy's own endpoints: /oauth2/start, /oauth2/callback,
+	# /oauth2/auth, /oauth2/sign_out. These are what establish a session, so
+	# they cannot require one.
+	handle /oauth2/* {
+		reverse_proxy authproxy:4180
+	}
+
+	# D33 — the ONLY route reachable without a session. Keep it boring: liveness
+	# only, never anything that reveals configuration, versions or data.
+	handle /api/healthz {
+		reverse_proxy api:8080
+	}
+
+	# ── gated ───────────────────────────────────────────────────────────────
+	handle /api/* {
+		import sso-api
+		reverse_proxy api:8080
+	}
+
+	# Future services go here. Everything needed is one block:
+	#
+	#   handle /grafana/* {
+	#       import sso
+	#       reverse_proxy grafana:3000
+	#   }
+	#
+	# No namespace changes, no port arithmetic, no cdm.json edit. If the service
+	# cannot cope with a sub-path, give it its own Tailscale sidecar pointing
+	# back at this Caddy rather than contorting the app.
+
+	# The SvelteKit frontend. It runs no OIDC flow of its own — by the time a
+	# request arrives here it is authenticated, and the user is in
+	# X-Auth-Request-User.
+	handle {
+		import sso
+		reverse_proxy web:3000
+	}
+}

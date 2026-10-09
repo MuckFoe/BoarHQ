@@ -1,0 +1,172 @@
+# CDM — container topology (R16)
+#
+# Reachable ONLY from the tailnet. No service declares `ports:` — nothing is
+# published on a host interface.
+#
+#   device ──WireGuard──> ts-cdm (Serve, terminates TLS)
+#                            └─ 127.0.0.1:80 ─> proxy (Caddy) ─> everything
+#
+# Tailscale Serve can only proxy to 127.0.0.1 (tailscale/tailscale#8751), which
+# is why ONE container shares the sidecar's network namespace. That container is
+# Caddy. Every other service is an ordinary compose service on the default
+# bridge network, keeping its natural port and reached by DNS name — so adding a
+# service is a Caddyfile block and nothing else.
+#
+# NOT RUNNABLE YET: ./web and ./api do not exist. This file is the agreed
+# topology (ARC1), not a working stack.
+
+name: cdm
+
+services:
+
+  # ── ingress ─────────────────────────────────────────────────────────────
+  ts-cdm:
+    image: tailscale/tailscale:latest
+    hostname: cdm                          # becomes cdm.<tailnet>.ts.net
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_SERVE_CONFIG: /config/cdm.json    # a single handler; never needs editing
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_EXTRA_ARGS: --advertise-tags=tag:cdm
+    volumes:
+      - ts-cdm-state:/var/lib/tailscale
+      - ./deploy/tailscale/cdm.json:/config/cdm.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add: [net_admin]
+    restart: unless-stopped
+
+  # The ONLY service sharing the sidecar's network namespace.
+  proxy:
+    image: caddy:2-alpine
+    network_mode: service:ts-cdm
+    depends_on: [ts-cdm]
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+  # ── application ─────────────────────────────────────────────────────────
+  web:
+    build: ./web
+    depends_on: [api]
+    environment:
+      PORT: "3000"
+      CDM_API_ORIGIN: http://api:8080
+      # No OIDC config: web runs no auth flow (D32). By the time a request
+      # reaches it, Caddy has authenticated it and the user is in
+      # X-Auth-Request-User. Trusting that header is safe only because
+      # deploy/caddy/Caddyfile strips any client-supplied copy first.
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    depends_on:
+      db-app: {condition: service_healthy}
+    environment:
+      CDM_LISTEN: 0.0.0.0:8080             # reached as api:8080 on the bridge
+      CDM_DB_DSN: postgres://cdm:${POSTGRES_APP_PASSWORD:?}@db-app:5432/cdm?sslmode=disable
+      CDM_OIDC_ISSUER: https://cdm.${TS_TAILNET:?}.ts.net/auth/realms/cdm
+      # The Bearer token arrives from oauth2-proxy, so it is minted for the
+      # forward-auth client, not for the frontend.
+      CDM_OIDC_AUDIENCE: cdm-forward-auth
+    restart: unless-stopped
+
+  # ── identity (R11) ──────────────────────────────────────────────────────
+  auth:
+    image: quay.io/keycloak/keycloak:26.4
+    command: start --optimized
+    depends_on:
+      db-auth: {condition: service_healthy}
+    environment:
+      # Must match the external URL exactly, path included. A mismatch here is
+      # the classic cause of an infinite login redirect.
+      KC_HOSTNAME: https://cdm.${TS_TAILNET:?}.ts.net/auth
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded          # replaces the removed KC_PROXY=edge
+      KC_HTTP_ENABLED: "true"               # TLS terminates at the sidecar
+      KC_HTTP_PORT: "8080"                  # natural port — no collision now
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db-auth:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${POSTGRES_AUTH_PASSWORD:?}
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?}
+    restart: unless-stopped
+
+  # Forward-auth gateway. Gates EVERY request (D32) — Caddy redirects an
+  # unauthenticated browser here, and hands `api` the Bearer token this returns.
+  # A future service that cannot speak OIDC gets the same treatment from
+  # Caddy's `import sso` with no code of its own.
+  authproxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    depends_on: [auth]
+    # On the request path for every gated route (D32), not just future
+    # services: if this is down, nothing but /auth, /oauth2 and /api/healthz
+    # answers.
+    command:
+      - --provider=keycloak-oidc
+      - --oidc-issuer-url=https://cdm.${TS_TAILNET:?}.ts.net/auth/realms/cdm
+      - --client-id=cdm-forward-auth
+      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:?}
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:?}
+      - --redirect-url=https://cdm.${TS_TAILNET:?}.ts.net/oauth2/callback
+      - --http-address=0.0.0.0:4180
+      - --reverse-proxy=true                # trust X-Forwarded-* from Caddy
+      - --upstream=static://202             # forward-auth only; proxies nothing
+      - --set-xauthrequest=true             # emit X-Auth-Request-* for Caddy
+      # D32 defence in depth: attach the token so `api` can verify a signature
+      # for itself rather than trusting a header. Without this the API's
+      # security would rest entirely on nothing reaching it off the bridge.
+      - --set-authorization-header=true
+      # NB: the D33 health carve-out is expressed ONLY in the Caddyfile, which
+      # routes /api/healthz without importing the gate — oauth2-proxy never sees
+      # that request. A --skip-auth-route here would be a second copy of the
+      # same rule, free to drift out of step with the first.
+      - --cookie-secure=true
+      - --email-domain=*
+      - --whitelist-domain=cdm.${TS_TAILNET:?}.ts.net
+    restart: unless-stopped
+
+  # ── data ────────────────────────────────────────────────────────────────
+  # Split instances (D23): Keycloak's schema is entirely its own, so the
+  # application database can be dumped, restored or reset without touching
+  # identity. Costs ~50MB extra RAM.
+  db-app:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cdm
+      POSTGRES_USER: cdm
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?}
+    volumes:
+      - db-app-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdm -d cdm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  db-auth:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:?}
+    volumes:
+      - db-auth-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  ts-cdm-state:
+  caddy-data:
+  caddy-config:
+  db-app-data:
+  db-auth-data:
