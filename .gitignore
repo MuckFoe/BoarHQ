@@ -1,0 +1,26 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Nothing else — this repo is documentation only.
+# Note: input/ is tracked here because it ships with its README. In a project
+# that *uses* this kit, consider ignoring input/ if the documents you drop in
+# are not meant to be committed.
+
+# Personal, per-machine overrides — never ships with the kit.
+.claude/settings.local.json
+
+# Secrets (SEC4) — .env holds Tailscale auth keys, DB passwords,
+# and the Keycloak bootstrap admin password. Never commit it.
+.env
+.env.*
+!.env.example
+
+# Tailscale node state
+deploy/tailscale/state/
